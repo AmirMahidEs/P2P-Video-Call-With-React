@@ -33,7 +33,7 @@ const CallPage = () => {
 
   const handleHangup = () => {
     releaseMedia();
-    navigate("/");
+    navigate("/", { replace: true });
   };
 
   return (

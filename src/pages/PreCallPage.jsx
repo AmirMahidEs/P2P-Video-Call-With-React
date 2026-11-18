@@ -27,17 +27,19 @@ const PreCallPage = () => {
     isCameraOn,
     isCameraLoading,
     cameraError,
-    activateCamera,
+    ensureCamera,
     toggleCamera,
 
+    microphoneStream,
     isMicrophoneOn,
     isMicrophoneLoading,
     microphoneError,
-    activateMicrophone,
+    ensureMicrophone,
     toggleMicrophone,
 
     isInitializingMedia,
     initializeMedia,
+    allowCallEntry,
     releaseMedia,
   } = useCall();
 
@@ -52,20 +54,35 @@ const PreCallPage = () => {
 
     if (!videoElement) return;
 
-    videoElement.srcObject = cameraStream;
+    videoElement.srcObject = cameraStream || null;
 
     return () => {
       videoElement.srcObject = null;
     };
   }, [cameraStream, isCameraOn]);
 
+  // Retry camera initialization
+  const handleRetryCamera = () => {
+    ensureCamera();
+  };
+
+  // Retry microphone initialization
+  const handleRetryMicrophone = () => {
+    ensureMicrophone();
+  };
+
+  // Join call
   const handleJoinCall = () => {
+    if (isInitializingMedia) return;
+
+    allowCallEntry();
     navigate("/call");
   };
 
+  // Leave pre-call
   const handleLeave = () => {
     releaseMedia();
-    navigate("/");
+    navigate("/", { replace: true });
   };
 
   return (
@@ -73,12 +90,14 @@ const PreCallPage = () => {
       <div className="mx-auto flex max-w-5xl flex-col gap-8">
         <header>
           <h1 className="text-3xl font-bold">آماده‌سازی تماس</h1>
+
           <p className="mt-2 text-slate-400">
             قبل از ورود به تماس، دوربین و میکروفون خود را بررسی کنید.
           </p>
         </header>
 
         <section className="grid gap-6 md:grid-cols-[2fr_1fr]">
+          {/* Camera Preview */}
           <div className="flex min-h-80 items-center justify-center overflow-hidden rounded-2xl bg-slate-900">
             {cameraStream && isCameraOn ? (
               <video
@@ -86,7 +105,7 @@ const PreCallPage = () => {
                 autoPlay
                 playsInline
                 muted
-                className="h-full  w-full object-cover"
+                className="h-full w-full object-cover"
               />
             ) : (
               <div className="text-center text-slate-400">
@@ -99,11 +118,14 @@ const PreCallPage = () => {
             )}
           </div>
 
+          {/* Device Status */}
           <div className="flex flex-col gap-5 rounded-2xl bg-slate-900 p-6">
             <h2 className="text-xl font-semibold">وضعیت دستگاه‌ها</h2>
 
+            {/* Camera */}
             <div className="rounded-xl bg-slate-800 p-4">
               <p className="font-medium">دوربین</p>
+
               <p className="mt-1 text-sm text-slate-400">
                 {isCameraLoading
                   ? "در حال دریافت..."
@@ -127,9 +149,9 @@ const PreCallPage = () => {
                   {isCameraOn ? "خاموش کردن" : "روشن کردن"}
                 </button>
 
-                {!isCameraOn && !isCameraLoading && (
+                {!cameraStream && !isCameraLoading && (
                   <button
-                    onClick={() => activateCamera()}
+                    onClick={handleRetryCamera}
                     className="rounded-lg bg-slate-700 px-4 py-2"
                   >
                     تلاش مجدد
@@ -138,8 +160,10 @@ const PreCallPage = () => {
               </div>
             </div>
 
+            {/* Microphone */}
             <div className="rounded-xl bg-slate-800 p-4">
               <p className="font-medium">میکروفون</p>
+
               <p className="mt-1 text-sm text-slate-400">
                 {isMicrophoneLoading
                   ? "در حال دریافت..."
@@ -163,9 +187,9 @@ const PreCallPage = () => {
                   {isMicrophoneOn ? "خاموش کردن" : "روشن کردن"}
                 </button>
 
-                {!isMicrophoneOn && !isMicrophoneLoading && (
+                {!microphoneStream && !isMicrophoneLoading && (
                   <button
-                    onClick={() => activateMicrophone()}
+                    onClick={handleRetryMicrophone}
                     className="rounded-lg bg-slate-700 px-4 py-2"
                   >
                     تلاش مجدد
@@ -176,13 +200,14 @@ const PreCallPage = () => {
           </div>
         </section>
 
+        {/* Actions */}
         <div className="flex flex-wrap gap-3">
           <button
             onClick={handleJoinCall}
             disabled={isInitializingMedia}
             className="rounded-xl bg-green-600 px-6 py-3 font-semibold disabled:opacity-50"
           >
-            ورود به تماس
+            {isInitializingMedia ? "در حال آماده‌سازی..." : "ورود به تماس"}
           </button>
 
           <button

@@ -1,6 +1,7 @@
 import { Routes, Route, Outlet, Navigate, useNavigate } from "react-router-dom";
 
 import { CallProvider } from "./features/call/providers/CallProvider";
+import CallRouteGuard from "./features/call/components/CallRouteGuard";
 
 import PreCallPage from "./pages/PreCallPage";
 import CallPage from "./pages/CallPage";
@@ -73,10 +74,13 @@ const App = () => {
           element={<PreCallPage />}
         />
 
-        <Route
-          path="/call"
-          element={<CallPage />}
-        />
+        {/* Protected Call Route */}
+        <Route element={<CallRouteGuard />}>
+          <Route
+            path="/call"
+            element={<CallPage />}
+          />
+        </Route>
       </Route>
 
       {/* Unknown Routes */}

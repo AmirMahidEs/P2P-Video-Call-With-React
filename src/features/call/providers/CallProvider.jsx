@@ -19,6 +19,9 @@ export const CallProvider = ({ children }) => {
 
   const [isInitializingMedia, setIsInitializingMedia] = useState(false);
 
+  // Controls access to the Call route
+  const [isCallEntryAllowed, setIsCallEntryAllowed] = useState(false);
+
   const initializationRef = useRef(null);
   const mountedRef = useRef(true);
 
@@ -54,10 +57,18 @@ export const CallProvider = ({ children }) => {
     return initializationPromise;
   }, [camera.ensureCamera, microphone.ensureMicrophone]);
 
-  // Release both media devices
+  // Allow user to enter the Call page
+  const allowCallEntry = useCallback(() => {
+    setIsCallEntryAllowed(true);
+  }, []);
+
+  // Release both media devices and reset call access
   const releaseMedia = useCallback(() => {
     // Invalidate current initialization
     initializationRef.current = null;
+
+    // Reset Call route access
+    setIsCallEntryAllowed(false);
 
     camera.releaseCamera();
     microphone.releaseMicrophone();
@@ -106,6 +117,10 @@ export const CallProvider = ({ children }) => {
       isInitializingMedia,
       initializeMedia,
       releaseMedia,
+
+      // Call route access
+      isCallEntryAllowed,
+      allowCallEntry,
     }),
     [
       camera.cameraStream,
@@ -129,6 +144,9 @@ export const CallProvider = ({ children }) => {
       isInitializingMedia,
       initializeMedia,
       releaseMedia,
+
+      isCallEntryAllowed,
+      allowCallEntry,
     ],
   );
 
