@@ -6,10 +6,13 @@ import {
 } from "../services/mediaDevices.service";
 
 const useCamera = () => {
+  // References
   const streamRef = useRef(null);
   const requestIdRef = useRef(0);
-  const mountedRef = useRef(false);
+  const ensurePromiseRef = useRef(null);
+  const mountedRef = useRef(true);
 
+  // States
   const [cameraStream, setCameraStream] = useState(null);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -38,9 +41,10 @@ const useCamera = () => {
         throw new Error("CAMERA_TRACK_NOT_AVAILABLE");
       }
 
-      // Stop previous stream only after successful acquisition
+      // Stop previous camera stream after getting the new one
       stopMediaStream(streamRef.current, "video");
 
+      // Update stream reference and state
       streamRef.current = newStream;
       setCameraStream(newStream);
       setIsCameraOn(newTrack.enabled);
@@ -52,6 +56,7 @@ const useCamera = () => {
           if (streamRef.current !== newStream) return;
 
           streamRef.current = null;
+
           setCameraStream(null);
           setIsCameraOn(false);
           setError("CAMERA_TRACK_ENDED");
@@ -62,7 +67,11 @@ const useCamera = () => {
       return newStream;
     } catch (err) {
       if (mountedRef.current && requestId === requestIdRef.current) {
-        setError(err.name || err.message || "UNKNOWN_CAMERA_ERROR");
+        setError(
+          err.name && err.name !== "Error"
+            ? err.name
+            : err.message || "UNKNOWN_CAMERA_ERROR",
+        );
 
         const currentTrack = streamRef.current?.getVideoTracks()[0];
 
@@ -83,14 +92,41 @@ const useCamera = () => {
     }
   }, []);
 
+  // Ensure camera has a live track
+  const ensureCamera = useCallback(() => {
+    const currentTrack = streamRef.current?.getVideoTracks()[0];
+
+    // Return existing stream if camera is already available
+    if (currentTrack && currentTrack.readyState === "live") {
+      return Promise.resolve(streamRef.current);
+    }
+
+    // Prevent duplicate simultaneous initialization requests
+    if (ensurePromiseRef.current) {
+      return ensurePromiseRef.current;
+    }
+
+    const initializationPromise = activateCamera();
+
+    ensurePromiseRef.current = initializationPromise;
+
+    initializationPromise.then(() => {
+      if (ensurePromiseRef.current === initializationPromise) {
+        ensurePromiseRef.current = null;
+      }
+    });
+
+    return initializationPromise;
+  }, [activateCamera]);
+
   // Enable or disable camera without stopping its track
   const setCameraEnabled = useCallback(
-    async (enabled) => {
+    (enabled) => {
       const currentTrack = streamRef.current?.getVideoTracks()[0];
 
       if (!currentTrack || currentTrack.readyState !== "live") {
         if (enabled) {
-          return activateCamera();
+          return ensureCamera();
         }
 
         setIsCameraOn(false);
@@ -102,16 +138,22 @@ const useCamera = () => {
 
       return streamRef.current;
     },
-    [activateCamera],
+    [ensureCamera],
   );
 
+  // Toggle camera state
   const toggleCamera = useCallback(() => {
-    return setCameraEnabled(!isCameraOn);
-  }, [isCameraOn, setCameraEnabled]);
+    const currentTrack = streamRef.current?.getVideoTracks()[0];
+
+    const nextEnabled = currentTrack ? !currentTrack.enabled : true;
+
+    return setCameraEnabled(nextEnabled);
+  }, [setCameraEnabled]);
 
   // Release camera resources
   const releaseCamera = useCallback(() => {
     requestIdRef.current += 1;
+    ensurePromiseRef.current = null;
 
     stopMediaStream(streamRef.current, "video");
 
@@ -130,8 +172,10 @@ const useCamera = () => {
     return () => {
       mountedRef.current = false;
       requestIdRef.current += 1;
+      ensurePromiseRef.current = null;
 
       stopMediaStream(streamRef.current, "video");
+
       streamRef.current = null;
     };
   }, []);
@@ -141,7 +185,9 @@ const useCamera = () => {
     isCameraOn,
     isLoading,
     error,
+
     activateCamera,
+    ensureCamera,
     setCameraEnabled,
     toggleCamera,
     releaseCamera,

@@ -20,10 +20,11 @@ export const CallProvider = ({ children }) => {
   const [isInitializingMedia, setIsInitializingMedia] = useState(false);
 
   const initializationRef = useRef(null);
+  const mountedRef = useRef(true);
 
   // Initialize camera and microphone independently and in parallel
   const initializeMedia = useCallback(() => {
-    // Prevent duplicate initialization requests
+    // Prevent duplicate simultaneous initialization
     if (initializationRef.current) {
       return initializationRef.current;
     }
@@ -31,39 +32,52 @@ export const CallProvider = ({ children }) => {
     setIsInitializingMedia(true);
 
     const initializationPromise = Promise.allSettled([
-      camera.activateCamera(),
-      microphone.activateMicrophone(),
+      camera.ensureCamera(),
+      microphone.ensureMicrophone(),
     ]);
 
     initializationRef.current = initializationPromise;
 
-    initializationPromise.finally(() => {
-      if (initializationRef.current === initializationPromise) {
-        initializationRef.current = null;
+    initializationPromise.then(() => {
+      // Ignore outdated initialization requests
+      if (initializationRef.current !== initializationPromise) {
+        return;
+      }
+
+      initializationRef.current = null;
+
+      if (mountedRef.current) {
         setIsInitializingMedia(false);
       }
     });
 
     return initializationPromise;
-  }, [camera.activateCamera, microphone.activateMicrophone]);
+  }, [camera.ensureCamera, microphone.ensureMicrophone]);
 
   // Release both media devices
   const releaseMedia = useCallback(() => {
+    // Invalidate current initialization
+    initializationRef.current = null;
+
     camera.releaseCamera();
     microphone.releaseMicrophone();
 
-    initializationRef.current = null;
     setIsInitializingMedia(false);
   }, [camera.releaseCamera, microphone.releaseMicrophone]);
 
-  // Release media when the Provider is unmounted
+  // Provider lifecycle
   useEffect(() => {
-    return () => {
-      camera.releaseCamera();
-      microphone.releaseMicrophone();
-    };
-  }, [camera.releaseCamera, microphone.releaseMicrophone]);
+    mountedRef.current = true;
 
+    return () => {
+      mountedRef.current = false;
+
+      // Invalidate initialization during cleanup
+      initializationRef.current = null;
+    };
+  }, []);
+
+  // Context value
   const contextValue = useMemo(
     () => ({
       // Camera
@@ -71,7 +85,9 @@ export const CallProvider = ({ children }) => {
       isCameraOn: camera.isCameraOn,
       isCameraLoading: camera.isLoading,
       cameraError: camera.error,
+
       activateCamera: camera.activateCamera,
+      ensureCamera: camera.ensureCamera,
       setCameraEnabled: camera.setCameraEnabled,
       toggleCamera: camera.toggleCamera,
 
@@ -80,7 +96,9 @@ export const CallProvider = ({ children }) => {
       isMicrophoneOn: microphone.isMicrophoneOn,
       isMicrophoneLoading: microphone.isLoading,
       microphoneError: microphone.error,
+
       activateMicrophone: microphone.activateMicrophone,
+      ensureMicrophone: microphone.ensureMicrophone,
       setMicrophoneEnabled: microphone.setMicrophoneEnabled,
       toggleMicrophone: microphone.toggleMicrophone,
 
@@ -89,7 +107,29 @@ export const CallProvider = ({ children }) => {
       initializeMedia,
       releaseMedia,
     }),
-    [camera, microphone, isInitializingMedia, initializeMedia, releaseMedia],
+    [
+      camera.cameraStream,
+      camera.isCameraOn,
+      camera.isLoading,
+      camera.error,
+      camera.activateCamera,
+      camera.ensureCamera,
+      camera.setCameraEnabled,
+      camera.toggleCamera,
+
+      microphone.microphoneStream,
+      microphone.isMicrophoneOn,
+      microphone.isLoading,
+      microphone.error,
+      microphone.activateMicrophone,
+      microphone.ensureMicrophone,
+      microphone.setMicrophoneEnabled,
+      microphone.toggleMicrophone,
+
+      isInitializingMedia,
+      initializeMedia,
+      releaseMedia,
+    ],
   );
 
   return (
@@ -97,7 +137,6 @@ export const CallProvider = ({ children }) => {
   );
 };
 
-// Access CallProvider context
 export const useCall = () => {
   const context = useContext(CallContext);
 
