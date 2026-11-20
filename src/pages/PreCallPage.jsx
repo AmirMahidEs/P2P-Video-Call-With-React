@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { useCall } from "../features/call/providers/CallProvider";
+import LocalVideo from "../features/media/components/LocalVideo";
 
 const getMediaErrorMessage = (error) => {
   const messages = {
@@ -20,7 +21,6 @@ const getMediaErrorMessage = (error) => {
 
 const PreCallPage = () => {
   const navigate = useNavigate();
-  const videoRef = useRef(null);
 
   const {
     cameraStream,
@@ -47,19 +47,6 @@ const PreCallPage = () => {
   useEffect(() => {
     initializeMedia();
   }, [initializeMedia]);
-
-  // Attach camera stream to video element
-  useEffect(() => {
-    const videoElement = videoRef.current;
-
-    if (!videoElement) return;
-
-    videoElement.srcObject = cameraStream || null;
-
-    return () => {
-      videoElement.srcObject = null;
-    };
-  }, [cameraStream, isCameraOn]);
 
   // Retry camera initialization
   const handleRetryCamera = () => {
@@ -98,24 +85,12 @@ const PreCallPage = () => {
 
         <section className="grid gap-6 md:grid-cols-[2fr_1fr]">
           {/* Camera Preview */}
-          <div className="flex min-h-80 items-center justify-center overflow-hidden rounded-2xl bg-slate-900">
-            {cameraStream && isCameraOn ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="text-center text-slate-400">
-                <p className="text-lg">
-                  {isCameraLoading
-                    ? "در حال دریافت تصویر دوربین..."
-                    : "دوربین خاموش است"}
-                </p>
-              </div>
-            )}
+          <div className="relative flex min-h-80 items-center justify-center overflow-hidden rounded-2xl bg-slate-900">
+            <LocalVideo
+              stream={cameraStream}
+              isOn={isCameraOn}
+              isLoading={isCameraLoading}
+            />
           </div>
 
           {/* Device Status */}
