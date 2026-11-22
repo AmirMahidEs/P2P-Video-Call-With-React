@@ -1,6 +1,7 @@
 import HomePage from "../pages/HomePage";
 import CallPage from "../pages/CallPage";
 import PreCallPage from "../pages/PreCallPage";
+import WebRTCLabPage from "../pages/WebRTCLabPage";
 import NotFoundPage from "../pages/NotFoundPage";
 
 import CallLayout from "./layouts/CallLayout";
@@ -10,6 +11,11 @@ const routes = [
   {
     path: "/",
     element: <HomePage />,
+  },
+
+  {
+    path: "/webrtc-lab",
+    element: <WebRTCLabPage />,
   },
 
   {
