@@ -42,6 +42,42 @@ const PeerPanel = ({ title, peer }) => (
   </div>
 );
 
+const MessageHistory = ({ messages }) => (
+  <div className="mt-4 max-h-64 space-y-2 overflow-y-auto rounded-lg bg-slate-800 p-3">
+    <p className="mb-2 text-xs text-slate-400">تاریخچه پیام‌ها</p>
+
+    {messages.length === 0 ? (
+      <p className="text-sm text-slate-500">هنوز پیامی ارسال یا دریافت نشده</p>
+    ) : (
+      messages.map((message) => (
+        <div
+          key={message.id}
+          className={`flex ${
+            message.sender === "local" ? "justify-end" : "justify-start"
+          }`}
+        >
+          <div
+            className={`max-w-[85%] rounded-lg px-3 py-2 ${
+              message.sender === "local" ? "bg-blue-700" : "bg-slate-700"
+            }`}
+          >
+            <p className=" text-sm text-white">{message.text}</p>
+
+            <span className="mt-1 block text-right text-xs text-slate-300">
+              {message.sender === "local" ? "ارسالی" : "دریافتی"}
+              {" · "}
+              {message.timestamp.toLocaleTimeString("fa-IR", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+        </div>
+      ))
+    )}
+  </div>
+);
+
 const WebRTCLabPage = () => {
   const peerA = usePeerConnection();
   const peerB = usePeerConnection();
@@ -274,14 +310,7 @@ const WebRTCLabPage = () => {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-lg bg-slate-800 p-3">
-                <p className="mb-2 text-xs text-slate-400">
-                  آخرین پیام دریافتی Peer B
-                </p>
-                <p className=" text-sm text-white">
-                  {peerB.lastMessage ?? "هنوز پیامی دریافت نشده"}
-                </p>
-              </div>
+              <MessageHistory messages={peerA.messages} />
             </div>
 
             {/* Peer B to Peer A */}
@@ -308,14 +337,7 @@ const WebRTCLabPage = () => {
                 </button>
               </div>
 
-              <div className="mt-4 rounded-lg bg-slate-800 p-3">
-                <p className="mb-2 text-xs text-slate-400">
-                  آخرین پیام دریافتی Peer A
-                </p>
-                <p className=" text-sm text-white">
-                  {peerA.lastMessage ?? "هنوز پیامی دریافت نشده"}
-                </p>
-              </div>
+              <MessageHistory messages={peerB.messages} />
             </div>
           </div>
         </section>

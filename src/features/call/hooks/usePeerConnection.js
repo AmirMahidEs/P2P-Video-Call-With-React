@@ -6,6 +6,10 @@ import {
   waitForIceGatheringComplete,
 } from "../services/peerConnection.service";
 
+// Generate a unique ID without requiring crypto.randomUUID()
+const generateMessageId = () =>
+  `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 const usePeerConnection = () => {
   // References
   const peerConnectionRef = useRef(null);
@@ -19,8 +23,7 @@ const usePeerConnection = () => {
 
   // DataChannel states
   const [dataChannelState, setDataChannelState] = useState(null);
-  const [lastMessage, setLastMessage] = useState(null);
-
+  const [messages, setMessages] = useState([]);
   const [error, setError] = useState(null);
 
   // Setup DataChannel event handlers
@@ -47,10 +50,19 @@ const usePeerConnection = () => {
       setError(event.error?.message || "DATA_CHANNEL_ERROR");
     };
 
+    // Receive a message from the remote peer
     dataChannel.onmessage = (event) => {
       if (dataChannelRef.current !== dataChannel) return;
 
-      setLastMessage(event.data);
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          id: generateMessageId(),
+          text: event.data,
+          sender: "remote",
+          timestamp: new Date(),
+        },
+      ]);
     };
 
     return dataChannel;
@@ -114,7 +126,6 @@ const usePeerConnection = () => {
         return peerConnection;
       } catch (err) {
         setError(err.message || "PEER_CONNECTION_INITIALIZATION_FAILED");
-
         return null;
       }
     },
@@ -145,7 +156,6 @@ const usePeerConnection = () => {
         return setupDataChannel(dataChannel);
       } catch (err) {
         setError(err.message || "DATA_CHANNEL_CREATION_FAILED");
-
         return null;
       }
     },
@@ -163,10 +173,20 @@ const usePeerConnection = () => {
     try {
       dataChannel.send(message);
 
+      // Add the sent message to the local chat history
+      setMessages((prevMessages) => [
+        ...prevMessages,
+        {
+          id: generateMessageId(),
+          text: message,
+          sender: "local",
+          timestamp: new Date(),
+        },
+      ]);
+
       return true;
     } catch (err) {
       setError(err.message || "DATA_CHANNEL_SEND_FAILED");
-
       return false;
     }
   }, []);
@@ -196,7 +216,6 @@ const usePeerConnection = () => {
       return peerConnection.localDescription.sdp;
     } catch (err) {
       setError(err.message || "OFFER_CREATION_FAILED");
-
       return null;
     }
   }, []);
@@ -231,7 +250,6 @@ const usePeerConnection = () => {
       return peerConnection.localDescription.sdp;
     } catch (err) {
       setError(err.message || "ANSWER_CREATION_FAILED");
-
       return null;
     }
   }, []);
@@ -256,7 +274,6 @@ const usePeerConnection = () => {
       return true;
     } catch (err) {
       setError(err.message || "REMOTE_ANSWER_FAILED");
-
       return false;
     }
   }, []);
@@ -296,7 +313,7 @@ const usePeerConnection = () => {
     setIceGatheringState("complete");
     setSignalingState("closed");
     setDataChannelState("closed");
-    setLastMessage(null);
+    setMessages([]);
     setError(null);
   }, []);
 
@@ -346,8 +363,7 @@ const usePeerConnection = () => {
 
     // DataChannel states
     dataChannelState,
-    lastMessage,
-
+    messages,
     error,
 
     // PeerConnection methods
