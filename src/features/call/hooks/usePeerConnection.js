@@ -5,25 +5,33 @@ import {
   closePeerConnection,
 } from "../services/peerConnection.service";
 
+const DISCONNECT_TIMEOUT_MS = 15000;
+
 const usePeerConnection = () => {
   const peerConnectionRef = useRef(null);
   const dataChannelRef = useRef(null);
+  const disconnectTimerRef = useRef(null);
 
   const [connectionState, setConnectionState] = useState(null);
   const [iceConnectionState, setIceConnectionState] = useState(null);
   const [iceGatheringState, setIceGatheringState] = useState(null);
   const [signalingState, setSignalingState] = useState(null);
-
   const [iceCandidates, setIceCandidates] = useState([]);
-
   const [dataChannelState, setDataChannelState] = useState(null);
   const [lastMessage, setLastMessage] = useState(null);
 
   const [error, setError] = useState(null);
+  const [connectionError, setConnectionError] = useState(null);
+
+  const clearDisconnectTimer = useCallback(() => {
+    if (disconnectTimerRef.current !== null) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+  }, []);
 
   const setupDataChannel = useCallback((dataChannel) => {
     dataChannelRef.current = dataChannel;
-
     setDataChannelState(dataChannel.readyState);
 
     dataChannel.onopen = () => {
@@ -38,6 +46,21 @@ const usePeerConnection = () => {
 
     dataChannel.onerror = (event) => {
       if (dataChannelRef.current !== dataChannel) return;
+
+      if (dataChannel.readyState === "closed") {
+        return;
+      }
+
+      const peerConnection = peerConnectionRef.current;
+
+      if (
+        !peerConnection ||
+        peerConnection.connectionState === "failed" ||
+        peerConnection.connectionState === "closed"
+      ) {
+        return;
+      }
+
       setError(event.error?.message || "DATA_CHANNEL_ERROR");
     };
 
@@ -61,11 +84,16 @@ const usePeerConnection = () => {
       }
 
       try {
+        clearDisconnectTimer();
+
         setError(null);
+        setConnectionError(null);
+
         setIceCandidates([]);
+        setLastMessage(null);
+        setDataChannelState(null);
 
         const peerConnection = createPeerConnection(configuration);
-
         peerConnectionRef.current = peerConnection;
 
         setConnectionState(peerConnection.connectionState);
@@ -75,16 +103,65 @@ const usePeerConnection = () => {
 
         peerConnection.onconnectionstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-          setConnectionState(peerConnection.connectionState);
+
+          const state = peerConnection.connectionState;
+
+          setConnectionState(state);
+
+          if (state === "failed") {
+            clearDisconnectTimer();
+            setConnectionError("ICE_CONNECTION_FAILED");
+          }
+
+          if (state === "connected") {
+            clearDisconnectTimer();
+            setConnectionError(null);
+          }
+
+          if (state === "closed") {
+            clearDisconnectTimer();
+          }
         };
 
         peerConnection.oniceconnectionstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-          setIceConnectionState(peerConnection.iceConnectionState);
+
+          const state = peerConnection.iceConnectionState;
+
+          setIceConnectionState(state);
+
+          if (state === "disconnected") {
+            if (disconnectTimerRef.current === null) {
+              disconnectTimerRef.current = setTimeout(() => {
+                disconnectTimerRef.current = null;
+
+                if (peerConnectionRef.current !== peerConnection) return;
+
+                if (peerConnection.iceConnectionState === "disconnected") {
+                  setConnectionError("ICE_CONNECTION_DISCONNECTED_TIMEOUT");
+                }
+              }, DISCONNECT_TIMEOUT_MS);
+            }
+          }
+
+          if (state === "connected" || state === "completed") {
+            clearDisconnectTimer();
+            setConnectionError(null);
+          }
+
+          if (state === "failed") {
+            clearDisconnectTimer();
+            setConnectionError("ICE_CONNECTION_FAILED");
+          }
+
+          if (state === "closed") {
+            clearDisconnectTimer();
+          }
         };
 
         peerConnection.onicegatheringstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
+
           setIceGatheringState(peerConnection.iceGatheringState);
         };
 
@@ -103,11 +180,13 @@ const usePeerConnection = () => {
 
         peerConnection.onsignalingstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
+
           setSignalingState(peerConnection.signalingState);
         };
 
         peerConnection.ondatachannel = (event) => {
           if (peerConnectionRef.current !== peerConnection) return;
+
           setupDataChannel(event.channel);
         };
 
@@ -117,7 +196,7 @@ const usePeerConnection = () => {
         return null;
       }
     },
-    [setupDataChannel],
+    [setupDataChannel, clearDisconnectTimer],
   );
 
   const createDataChannel = useCallback(
@@ -139,6 +218,7 @@ const usePeerConnection = () => {
 
       try {
         const dataChannel = peerConnection.createDataChannel(label, options);
+
         return setupDataChannel(dataChannel);
       } catch (err) {
         setError(err.message || "DATA_CHANNEL_CREATION_FAILED");
@@ -176,7 +256,6 @@ const usePeerConnection = () => {
       setError(null);
 
       const offer = await peerConnection.createOffer();
-
       await peerConnection.setLocalDescription(offer);
 
       if (peerConnectionRef.current !== peerConnection) {
@@ -207,7 +286,6 @@ const usePeerConnection = () => {
       });
 
       const answer = await peerConnection.createAnswer();
-
       await peerConnection.setLocalDescription(answer);
 
       if (peerConnectionRef.current !== peerConnection) {
@@ -271,7 +349,9 @@ const usePeerConnection = () => {
     }
   }, []);
 
-  const releasePeerConnection = useCallback(() => {
+  const cleanupPeerConnection = useCallback(() => {
+    clearDisconnectTimer();
+
     const peerConnection = peerConnectionRef.current;
     const dataChannel = dataChannelRef.current;
 
@@ -299,6 +379,10 @@ const usePeerConnection = () => {
       peerConnectionRef.current = null;
       closePeerConnection(peerConnection);
     }
+  }, [clearDisconnectTimer]);
+
+  const releasePeerConnection = useCallback(() => {
+    cleanupPeerConnection();
 
     setConnectionState("closed");
     setIceConnectionState("closed");
@@ -308,61 +392,31 @@ const usePeerConnection = () => {
     setDataChannelState("closed");
     setLastMessage(null);
     setError(null);
-  }, []);
+    setConnectionError(null);
+  }, [cleanupPeerConnection]);
 
   useEffect(() => {
     return () => {
-      const dataChannel = dataChannelRef.current;
-      const peerConnection = peerConnectionRef.current;
-
-      if (dataChannel) {
-        dataChannel.onopen = null;
-        dataChannel.onclose = null;
-        dataChannel.onerror = null;
-        dataChannel.onmessage = null;
-
-        if (dataChannel.readyState !== "closed") {
-          dataChannel.close();
-        }
-      }
-
-      if (peerConnection) {
-        peerConnection.onconnectionstatechange = null;
-        peerConnection.oniceconnectionstatechange = null;
-        peerConnection.onicegatheringstatechange = null;
-        peerConnection.onicecandidate = null;
-        peerConnection.onsignalingstatechange = null;
-        peerConnection.ondatachannel = null;
-
-        closePeerConnection(peerConnection);
-      }
-
-      dataChannelRef.current = null;
-      peerConnectionRef.current = null;
+      cleanupPeerConnection();
     };
-  }, []);
+  }, [cleanupPeerConnection]);
 
   return {
     peerConnectionRef,
     dataChannelRef,
-
     connectionState,
     iceConnectionState,
     iceGatheringState,
     signalingState,
-
     iceCandidates,
-
     dataChannelState,
     lastMessage,
     error,
-
+    connectionError,
     initializePeerConnection,
     releasePeerConnection,
-
     createDataChannel,
     sendData,
-
     createLocalOffer,
     createAnswerFromOffer,
     applyRemoteAnswer,

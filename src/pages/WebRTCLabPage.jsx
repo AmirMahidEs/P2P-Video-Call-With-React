@@ -2,6 +2,17 @@ import { useState } from "react";
 
 import usePeerConnection from "../features/call/hooks/usePeerConnection";
 
+const getConnectionErrorMessage = (error) => {
+  const messages = {
+    ICE_CONNECTION_FAILED: "ارتباط با Peer مقابل با شکست مواجه شد.",
+
+    ICE_CONNECTION_DISCONNECTED_TIMEOUT:
+      "ارتباط موقتاً قطع شد و در زمان انتظار دوباره برقرار نشد.",
+  };
+
+  return messages[error] || error;
+};
+
 const StateLabel = ({ label, value }) => (
   <div className="flex items-center justify-between gap-4 border-b border-slate-700 py-2">
     <span className="text-sm text-slate-400">{label}</span>
@@ -29,18 +40,22 @@ const PeerPanel = ({
       label="Connection"
       value={peer.connectionState}
     />
+
     <StateLabel
       label="ICE Connection"
       value={peer.iceConnectionState}
     />
+
     <StateLabel
       label="ICE Gathering"
       value={peer.iceGatheringState}
     />
+
     <StateLabel
       label="Signaling"
       value={peer.signalingState}
     />
+
     <StateLabel
       label="DataChannel"
       value={peer.dataChannelState}
@@ -48,6 +63,16 @@ const PeerPanel = ({
 
     {peer.error && (
       <p className="mt-3 text-sm text-red-400">Error: {peer.error}</p>
+    )}
+
+    {peer.connectionError && (
+      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+        <p className="text-sm font-medium text-red-400">Connection Error</p>
+
+        <p className="mt-1 text-sm text-red-300">
+          {getConnectionErrorMessage(peer.connectionError)}
+        </p>
+      </div>
     )}
 
     {/* Local ICE Candidates */}
@@ -236,6 +261,7 @@ const WebRTCLabPage = () => {
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">WebRTC Lab</h1>
+
             <p className="mt-2 text-sm text-slate-400">
               آزمایش ارتباط دو Peer با استفاده از DataChannel
             </p>
@@ -399,6 +425,7 @@ const WebRTCLabPage = () => {
                 <p className="mb-2 text-xs text-slate-400">
                   آخرین پیام دریافتی Peer B
                 </p>
+
                 <p className="text-sm text-white">
                   {peerB.lastMessage ?? "هنوز پیامی دریافت نشده"}
                 </p>
@@ -432,6 +459,7 @@ const WebRTCLabPage = () => {
                 <p className="mb-2 text-xs text-slate-400">
                   آخرین پیام دریافتی Peer A
                 </p>
+
                 <p className="text-sm text-white">
                   {peerA.lastMessage ?? "هنوز پیامی دریافت نشده"}
                 </p>
