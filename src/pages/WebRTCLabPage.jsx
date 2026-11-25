@@ -11,7 +11,17 @@ const StateLabel = ({ label, value }) => (
   </div>
 );
 
-const PeerPanel = ({ title, peer }) => (
+const PeerPanel = ({
+  title,
+  peer,
+  remoteCandidates,
+  onRemoteCandidatesChange,
+  onAddRemoteCandidates,
+  onCopyCandidates,
+  copied,
+  status,
+  isInitialized,
+}) => (
   <div className="rounded-xl border border-slate-700 bg-slate-900 p-5">
     <h2 className="mb-4 text-lg font-bold text-white">{title}</h2>
 
@@ -39,6 +49,52 @@ const PeerPanel = ({ title, peer }) => (
     {peer.error && (
       <p className="mt-3 text-sm text-red-400">Error: {peer.error}</p>
     )}
+
+    {/* Local ICE Candidates */}
+    <div className="mt-4">
+      <p className="mb-2 text-sm font-medium text-slate-300">
+        Local ICE Candidates ({peer.iceCandidates.length})
+      </p>
+
+      <textarea
+        readOnly
+        value={JSON.stringify(peer.iceCandidates, null, 2)}
+        placeholder="هنوز Candidateای دریافت نشده..."
+        className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-xs text-slate-300"
+      />
+
+      <button
+        onClick={onCopyCandidates}
+        disabled={!peer.iceCandidates.length}
+        className="mt-2 rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {copied ? "Copied!" : "Copy Candidates"}
+      </button>
+    </div>
+
+    {/* Remote ICE Candidates */}
+    <div className="mt-6 border-t border-slate-700 pt-4">
+      <p className="mb-2 text-sm font-medium text-slate-300">
+        Remote ICE Candidates
+      </p>
+
+      <textarea
+        value={remoteCandidates}
+        onChange={(event) => onRemoteCandidatesChange(event.target.value)}
+        placeholder="Candidateهای Peer مقابل را اینجا Paste کن..."
+        className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-xs text-slate-200 outline-none focus:border-blue-500"
+      />
+
+      <button
+        onClick={onAddRemoteCandidates}
+        disabled={!isInitialized || !remoteCandidates.trim()}
+        className="mt-3 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        Add Remote Candidates
+      </button>
+
+      {status && <p className="mt-3 text-sm text-emerald-400">{status}</p>}
+    </div>
   </div>
 );
 
@@ -48,12 +104,20 @@ const WebRTCLabPage = () => {
 
   const [offerSdp, setOfferSdp] = useState("");
   const [answerSdp, setAnswerSdp] = useState("");
+
   const [messageA, setMessageA] = useState("");
   const [messageB, setMessageB] = useState("");
+
+  const [remoteCandidatesA, setRemoteCandidatesA] = useState("");
+  const [remoteCandidatesB, setRemoteCandidatesB] = useState("");
+
+  const [candidateStatusA, setCandidateStatusA] = useState("");
+  const [candidateStatusB, setCandidateStatusB] = useState("");
+
   const [isInitialized, setIsInitialized] = useState(false);
   const [copiedField, setCopiedField] = useState(null);
 
-  const copySdp = async (text, field) => {
+  const copyText = async (text, field) => {
     if (!text.trim()) return;
 
     try {
@@ -105,6 +169,28 @@ const WebRTCLabPage = () => {
     await peerA.applyRemoteAnswer(answerSdp);
   };
 
+  const addCandidates = async (peer, rawCandidates, setStatus) => {
+    try {
+      const candidates = JSON.parse(rawCandidates);
+
+      if (!Array.isArray(candidates) || candidates.length === 0) {
+        setStatus("Candidate معتبر وارد نشده است.");
+        return;
+      }
+
+      const success = await peer.addRemoteIceCandidates(candidates);
+
+      if (success) {
+        setStatus(`${candidates.length} Candidate با موفقیت ثبت شد.`);
+      } else {
+        setStatus("ثبت Candidateها ناموفق بود.");
+      }
+    } catch (error) {
+      console.error("Invalid ICE Candidates:", error);
+      setStatus("فرمت JSON نامعتبر است.");
+    }
+  };
+
   const sendFromA = () => {
     if (!messageA.trim()) return;
 
@@ -133,6 +219,13 @@ const WebRTCLabPage = () => {
     setAnswerSdp("");
     setMessageA("");
     setMessageB("");
+
+    setRemoteCandidatesA("");
+    setRemoteCandidatesB("");
+
+    setCandidateStatusA("");
+    setCandidateStatusB("");
+
     setCopiedField(null);
     setIsInitialized(false);
   };
@@ -169,10 +262,39 @@ const WebRTCLabPage = () => {
           <PeerPanel
             title="Peer A — Offerer"
             peer={peerA}
+            remoteCandidates={remoteCandidatesA}
+            onRemoteCandidatesChange={setRemoteCandidatesA}
+            onAddRemoteCandidates={() =>
+              addCandidates(peerA, remoteCandidatesA, setCandidateStatusA)
+            }
+            onCopyCandidates={() =>
+              copyText(
+                JSON.stringify(peerA.iceCandidates, null, 2),
+                "candidates-a",
+              )
+            }
+            copied={copiedField === "candidates-a"}
+            status={candidateStatusA}
+            isInitialized={isInitialized}
           />
+
           <PeerPanel
             title="Peer B — Answerer"
             peer={peerB}
+            remoteCandidates={remoteCandidatesB}
+            onRemoteCandidatesChange={setRemoteCandidatesB}
+            onAddRemoteCandidates={() =>
+              addCandidates(peerB, remoteCandidatesB, setCandidateStatusB)
+            }
+            onCopyCandidates={() =>
+              copyText(
+                JSON.stringify(peerB.iceCandidates, null, 2),
+                "candidates-b",
+              )
+            }
+            copied={copiedField === "candidates-b"}
+            status={candidateStatusB}
+            isInitialized={isInitialized}
           />
         </div>
 
@@ -195,7 +317,7 @@ const WebRTCLabPage = () => {
           />
 
           <button
-            onClick={() => copySdp(offerSdp, "offer")}
+            onClick={() => copyText(offerSdp, "offer")}
             disabled={!offerSdp.trim()}
             className="mt-3 rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -224,7 +346,7 @@ const WebRTCLabPage = () => {
           />
 
           <button
-            onClick={() => copySdp(answerSdp, "answer")}
+            onClick={() => copyText(answerSdp, "answer")}
             disabled={!answerSdp.trim()}
             className="mt-3 rounded-lg bg-slate-700 px-4 py-2 text-sm hover:bg-slate-600 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -250,7 +372,6 @@ const WebRTCLabPage = () => {
           <h2 className="mb-5 text-lg font-bold">مرحله چهارم: ارسال پیام</h2>
 
           <div className="grid gap-6 md:grid-cols-2">
-            {/* Peer A to Peer B */}
             <div>
               <p className="mb-3 font-medium">ارسال از Peer A به Peer B</p>
 
@@ -278,13 +399,12 @@ const WebRTCLabPage = () => {
                 <p className="mb-2 text-xs text-slate-400">
                   آخرین پیام دریافتی Peer B
                 </p>
-                <p className=" text-sm text-white">
+                <p className="text-sm text-white">
                   {peerB.lastMessage ?? "هنوز پیامی دریافت نشده"}
                 </p>
               </div>
             </div>
 
-            {/* Peer B to Peer A */}
             <div>
               <p className="mb-3 font-medium">ارسال از Peer B به Peer A</p>
 
@@ -312,7 +432,7 @@ const WebRTCLabPage = () => {
                 <p className="mb-2 text-xs text-slate-400">
                   آخرین پیام دریافتی Peer A
                 </p>
-                <p className=" text-sm text-white">
+                <p className="text-sm text-white">
                   {peerA.lastMessage ?? "هنوز پیامی دریافت نشده"}
                 </p>
               </div>

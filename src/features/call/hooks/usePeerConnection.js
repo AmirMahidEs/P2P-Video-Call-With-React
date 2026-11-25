@@ -3,27 +3,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createPeerConnection,
   closePeerConnection,
-  waitForIceGatheringComplete,
 } from "../services/peerConnection.service";
 
 const usePeerConnection = () => {
-  // References
   const peerConnectionRef = useRef(null);
   const dataChannelRef = useRef(null);
 
-  // PeerConnection states
   const [connectionState, setConnectionState] = useState(null);
   const [iceConnectionState, setIceConnectionState] = useState(null);
   const [iceGatheringState, setIceGatheringState] = useState(null);
   const [signalingState, setSignalingState] = useState(null);
 
-  // DataChannel states
+  const [iceCandidates, setIceCandidates] = useState([]);
+
   const [dataChannelState, setDataChannelState] = useState(null);
   const [lastMessage, setLastMessage] = useState(null);
 
   const [error, setError] = useState(null);
 
-  // Setup DataChannel event handlers
   const setupDataChannel = useCallback((dataChannel) => {
     dataChannelRef.current = dataChannel;
 
@@ -31,32 +28,27 @@ const usePeerConnection = () => {
 
     dataChannel.onopen = () => {
       if (dataChannelRef.current !== dataChannel) return;
-
       setDataChannelState(dataChannel.readyState);
     };
 
     dataChannel.onclose = () => {
       if (dataChannelRef.current !== dataChannel) return;
-
       setDataChannelState(dataChannel.readyState);
     };
 
     dataChannel.onerror = (event) => {
       if (dataChannelRef.current !== dataChannel) return;
-
       setError(event.error?.message || "DATA_CHANNEL_ERROR");
     };
 
     dataChannel.onmessage = (event) => {
       if (dataChannelRef.current !== dataChannel) return;
-
       setLastMessage(event.data);
     };
 
     return dataChannel;
   }, []);
 
-  // Create a new PeerConnection
   const initializePeerConnection = useCallback(
     (configuration) => {
       const currentPeerConnection = peerConnectionRef.current;
@@ -70,6 +62,7 @@ const usePeerConnection = () => {
 
       try {
         setError(null);
+        setIceCandidates([]);
 
         const peerConnection = createPeerConnection(configuration);
 
@@ -82,46 +75,51 @@ const usePeerConnection = () => {
 
         peerConnection.onconnectionstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-
           setConnectionState(peerConnection.connectionState);
         };
 
         peerConnection.oniceconnectionstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-
           setIceConnectionState(peerConnection.iceConnectionState);
         };
 
         peerConnection.onicegatheringstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-
           setIceGatheringState(peerConnection.iceGatheringState);
+        };
+
+        peerConnection.onicecandidate = (event) => {
+          if (peerConnectionRef.current !== peerConnection) return;
+
+          if (event.candidate) {
+            setIceCandidates((previous) => [
+              ...previous,
+              event.candidate.toJSON(),
+            ]);
+          } else {
+            console.log("ICE gathering completed");
+          }
         };
 
         peerConnection.onsignalingstatechange = () => {
           if (peerConnectionRef.current !== peerConnection) return;
-
           setSignalingState(peerConnection.signalingState);
         };
 
-        // Receive DataChannel created by the remote peer
         peerConnection.ondatachannel = (event) => {
           if (peerConnectionRef.current !== peerConnection) return;
-
           setupDataChannel(event.channel);
         };
 
         return peerConnection;
       } catch (err) {
         setError(err.message || "PEER_CONNECTION_INITIALIZATION_FAILED");
-
         return null;
       }
     },
     [setupDataChannel],
   );
 
-  // Create a DataChannel on the local peer
   const createDataChannel = useCallback(
     (label = "chat", options) => {
       const peerConnection = peerConnectionRef.current;
@@ -141,18 +139,15 @@ const usePeerConnection = () => {
 
       try {
         const dataChannel = peerConnection.createDataChannel(label, options);
-
         return setupDataChannel(dataChannel);
       } catch (err) {
         setError(err.message || "DATA_CHANNEL_CREATION_FAILED");
-
         return null;
       }
     },
     [setupDataChannel],
   );
 
-  // Send a message through the DataChannel
   const sendData = useCallback((message) => {
     const dataChannel = dataChannelRef.current;
 
@@ -162,16 +157,13 @@ const usePeerConnection = () => {
 
     try {
       dataChannel.send(message);
-
       return true;
     } catch (err) {
       setError(err.message || "DATA_CHANNEL_SEND_FAILED");
-
       return false;
     }
   }, []);
 
-  // Create an Offer and gather ICE candidates
   const createLocalOffer = useCallback(async () => {
     const peerConnection = peerConnectionRef.current;
 
@@ -187,8 +179,6 @@ const usePeerConnection = () => {
 
       await peerConnection.setLocalDescription(offer);
 
-      await waitForIceGatheringComplete(peerConnection);
-
       if (peerConnectionRef.current !== peerConnection) {
         return null;
       }
@@ -196,12 +186,10 @@ const usePeerConnection = () => {
       return peerConnection.localDescription.sdp;
     } catch (err) {
       setError(err.message || "OFFER_CREATION_FAILED");
-
       return null;
     }
   }, []);
 
-  // Receive an Offer and create an Answer
   const createAnswerFromOffer = useCallback(async (offerSdp) => {
     const peerConnection = peerConnectionRef.current;
 
@@ -222,8 +210,6 @@ const usePeerConnection = () => {
 
       await peerConnection.setLocalDescription(answer);
 
-      await waitForIceGatheringComplete(peerConnection);
-
       if (peerConnectionRef.current !== peerConnection) {
         return null;
       }
@@ -231,12 +217,10 @@ const usePeerConnection = () => {
       return peerConnection.localDescription.sdp;
     } catch (err) {
       setError(err.message || "ANSWER_CREATION_FAILED");
-
       return null;
     }
   }, []);
 
-  // Receive the Answer from the remote peer
   const applyRemoteAnswer = useCallback(async (answerSdp) => {
     const peerConnection = peerConnectionRef.current;
 
@@ -256,12 +240,37 @@ const usePeerConnection = () => {
       return true;
     } catch (err) {
       setError(err.message || "REMOTE_ANSWER_FAILED");
-
       return false;
     }
   }, []);
 
-  // Close the current PeerConnection
+  const addRemoteIceCandidates = useCallback(async (candidates) => {
+    const peerConnection = peerConnectionRef.current;
+
+    if (!peerConnection) {
+      setError("PEER_CONNECTION_NOT_INITIALIZED");
+      return false;
+    }
+
+    if (!Array.isArray(candidates)) {
+      setError("INVALID_ICE_CANDIDATES");
+      return false;
+    }
+
+    try {
+      setError(null);
+
+      for (const candidate of candidates) {
+        await peerConnection.addIceCandidate(candidate);
+      }
+
+      return true;
+    } catch (err) {
+      setError(err.message || "ADD_ICE_CANDIDATE_FAILED");
+      return false;
+    }
+  }, []);
+
   const releasePeerConnection = useCallback(() => {
     const peerConnection = peerConnectionRef.current;
     const dataChannel = dataChannelRef.current;
@@ -283,11 +292,11 @@ const usePeerConnection = () => {
       peerConnection.onconnectionstatechange = null;
       peerConnection.oniceconnectionstatechange = null;
       peerConnection.onicegatheringstatechange = null;
+      peerConnection.onicecandidate = null;
       peerConnection.onsignalingstatechange = null;
       peerConnection.ondatachannel = null;
 
       peerConnectionRef.current = null;
-
       closePeerConnection(peerConnection);
     }
 
@@ -295,12 +304,12 @@ const usePeerConnection = () => {
     setIceConnectionState("closed");
     setIceGatheringState("complete");
     setSignalingState("closed");
+    setIceCandidates([]);
     setDataChannelState("closed");
     setLastMessage(null);
     setError(null);
   }, []);
 
-  // Hook cleanup
   useEffect(() => {
     return () => {
       const dataChannel = dataChannelRef.current;
@@ -315,53 +324,49 @@ const usePeerConnection = () => {
         if (dataChannel.readyState !== "closed") {
           dataChannel.close();
         }
-
-        dataChannelRef.current = null;
       }
 
       if (peerConnection) {
         peerConnection.onconnectionstatechange = null;
         peerConnection.oniceconnectionstatechange = null;
         peerConnection.onicegatheringstatechange = null;
+        peerConnection.onicecandidate = null;
         peerConnection.onsignalingstatechange = null;
         peerConnection.ondatachannel = null;
 
-        peerConnectionRef.current = null;
-
         closePeerConnection(peerConnection);
       }
+
+      dataChannelRef.current = null;
+      peerConnectionRef.current = null;
     };
   }, []);
 
   return {
-    // References
     peerConnectionRef,
     dataChannelRef,
 
-    // PeerConnection states
     connectionState,
     iceConnectionState,
     iceGatheringState,
     signalingState,
 
-    // DataChannel states
+    iceCandidates,
+
     dataChannelState,
     lastMessage,
-
     error,
 
-    // PeerConnection methods
     initializePeerConnection,
     releasePeerConnection,
 
-    // DataChannel methods
     createDataChannel,
     sendData,
 
-    // Negotiation methods
     createLocalOffer,
     createAnswerFromOffer,
     applyRemoteAnswer,
+    addRemoteIceCandidates,
   };
 };
 
